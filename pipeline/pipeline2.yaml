@@ -1,0 +1,27 @@
+trigger:
+  branches:
+    include:
+      - feature/*
+      - main
+variable:
+  worDir: "$(System.DefaultWorkingDirectory)/environment/dev"
+
+pool:
+  name: aks_agent
+
+stage: 
+  - stage: Terraform_Validate
+    displayName: 'Terraform Validate'
+    jobs:
+      - job: terraformValidate
+        displayName: 'Terraform Validate Job'
+        steps:
+          - checkout: self
+
+          - script: |
+              echo "Working Directory: $(worDir)"
+              cd $(worDir)
+              terraform init -input=false
+              terraform validate
+              terraform plan -input=false -out=tfplan
+            

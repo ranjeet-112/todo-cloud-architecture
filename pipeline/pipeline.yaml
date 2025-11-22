@@ -1,0 +1,72 @@
+
+trigger: 
+  branches:
+    include:
+      - hotfix/v-01/*
+        main
+
+parameters:
+  - name: environment
+    type: string
+    default: dev
+    values:
+      - dev
+      
+
+name: todo-cloud-architecture-$(Date:2025-11-08)$(Rev:.r)
+
+stages:
+
+  - stage: Init_and_Plan
+    displayName: Terraform Init and Plan
+    jobs:
+      - job: terraformInit
+        displayName: Terraform Init
+        pool:
+          name: aks_agent
+        steps:
+          - checkout: self
+
+          - script: |
+              echo "Selected environment: ${{ parameters.environment }}"
+              cd ${{ format('environment/{0}', parameters.environment) }}
+              terraform init -input=false
+              terraform validate || true
+              terraform plan -input=false -out=tfplan
+            displayName: 'Terraform init / validate / plan'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish plan artifact'
+            inputs:
+              targetPath: ${{ format('environment/{0}/tfplan', parameters.environment) }}
+              artifactName: tfplan
+
+  - stage: Apply
+    displayName: Terraform Apply
+    dependsOn: Plan
+    condition: succeeded()
+    jobs:
+      - deployment: ApplyDeployment
+        displayName: Apply
+        environment: ${{ parameters.environment }}
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: DownloadPipelineArtifact@2
+                  displayName: 'Download plan artifact'
+                  inputs:
+                    artifact: tfplan
+                    path: $(Pipeline.Workspace)
+
+                - script: |
+                    echo "Applying in ${{ parameters.environment }}"
+                    cd ${{ format('environment/{0}', parameters.environment) }}
+                    terraform init -input=false
+                    terraform apply -input=false $(Pipeline.Workspace)/tfplan
+                  displayName: 'Terraform apply'
+
